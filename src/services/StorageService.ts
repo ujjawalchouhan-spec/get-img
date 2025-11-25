@@ -1,65 +1,32 @@
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { config } from '../config/env';
 import { logger } from '../utils/logger';
-import crypto from 'crypto';
+import { StorageProvider, StorageProviderName } from './storage/types';
+import { AwsStorageProvider } from './storage/AwsStorageProvider';
+import { SupabaseStorageProvider } from './storage/SupabaseStorageProvider';
 
 export class StorageService {
-    private s3Client: S3Client;
-    private bucketName: string;
-    private region: string;
+    private provider: StorageProvider;
 
     constructor() {
-        this.region = config.AWS_REGION || 'us-east-1';
-        this.bucketName = config.AWS_S3_BUCKET_NAME || '';
+        const providerName = config.STORAGE_PROVIDER as StorageProviderName;
 
-        if (config.AWS_ACCESS_KEY_ID && config.AWS_SECRET_ACCESS_KEY) {
-            this.s3Client = new S3Client({
-                region: this.region,
-                credentials: {
-                    accessKeyId: config.AWS_ACCESS_KEY_ID,
-                    secretAccessKey: config.AWS_SECRET_ACCESS_KEY,
-                },
-            });
-        } else {
-            // Fallback or error if credentials missing, though we might want to allow 
-            // instantiation and fail on upload if optional.
-            logger.warn('AWS Credentials not fully configured. StorageService may fail.');
-            this.s3Client = new S3Client({ region: this.region });
+        switch (providerName) {
+            case 'aws':
+                this.provider = new AwsStorageProvider();
+                break;
+            case 'supabase':
+                this.provider = new SupabaseStorageProvider();
+                break;
+            default:
+                logger.warn(`Unknown storage provider: ${providerName}, defaulting to Supabase`);
+                this.provider = new SupabaseStorageProvider();
         }
+
+        logger.info(`Storage Service initialized with provider: ${this.provider.name}`);
     }
 
     async uploadImage(base64Data: string): Promise<string> {
-        if (!this.bucketName) {
-            throw new Error('AWS_S3_BUCKET_NAME is not configured');
-        }
-
-        // Remove header if present (e.g., "data:image/png;base64,")
-        const base64Image = base64Data.replace(/^data:image\/\w+;base64,/, "");
-        const buffer = Buffer.from(base64Image, 'base64');
-
-        const key = `${crypto.randomUUID()}.png`;
-
-        try {
-            const command = new PutObjectCommand({
-                Bucket: this.bucketName,
-                Key: key,
-                Body: buffer,
-                ContentType: 'image/png',
-                // ACL: 'public-read', // Optional: depends on bucket settings. 
-                // Modern S3 often blocks public ACLs by default, preferring Bucket Policy.
-            });
-
-            await this.s3Client.send(command);
-
-            // Construct URL
-            const url = `https://${this.bucketName}.s3.${this.region}.amazonaws.com/${key}`;
-            logger.info(`Image uploaded to S3: ${url}`);
-            return url;
-
-        } catch (error: any) {
-            logger.error(error, 'S3 Upload Failed');
-            throw new Error(`Failed to upload image to S3: ${error.message}`);
-        }
+        return this.provider.uploadImage(base64Data);
     }
 }
 

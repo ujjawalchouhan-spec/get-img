@@ -1,8 +1,11 @@
 import express, { Request, Response, NextFunction } from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import session from 'express-session';
+import passport from './config/passport';
 import { logger } from './utils/logger';
 import { AppError } from './utils/AppError';
+import { config } from './config/env';
 
 const app = express();
 
@@ -10,9 +13,30 @@ const app = express();
 app.use(helmet({
     contentSecurityPolicy: false,
 }));
-app.use(cors());
-app.use(express.json({ limit: '10mb' })); // Allow larger payloads for base64 images if needed
+app.use(cors({
+    origin: 'http://localhost:3000',
+    credentials: true
+}));
+app.use(express.json({ limit: '10mb' }));
 app.use(express.static('public'));
+
+// Session configuration
+app.use(
+    session({
+        secret: config.SESSION_SECRET,
+        resave: false,
+        saveUninitialized: false,
+        cookie: {
+            secure: config.NODE_ENV === 'production',
+            httpOnly: true,
+            maxAge: 24 * 60 * 60 * 1000, // 24 hours
+        },
+    })
+);
+
+// Initialize Passport
+app.use(passport.initialize());
+app.use(passport.session());
 
 // Health Check
 app.get('/health', (req, res) => {
@@ -20,7 +44,9 @@ app.get('/health', (req, res) => {
 });
 
 import imageRoutes from './routes/imageRoutes';
+import authRoutes from './routes/authRoutes';
 
+app.use('/auth', authRoutes);
 app.use('/api/v1', imageRoutes);
 
 // 404 Handler

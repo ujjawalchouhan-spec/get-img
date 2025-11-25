@@ -26,6 +26,8 @@ export class StabilityProvider implements ImageProvider {
         try {
             const formData = new FormData();
             formData.append('prompt', request.prompt);
+            console.log('referenceImages', request.referenceImages?.[0]);
+            formData.append('reference_images', request.referenceImages?.[0] || '');    
             formData.append('output_format', 'png');
 
             // If we had reference images, we would append them here
